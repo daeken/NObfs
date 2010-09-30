@@ -1,0 +1,845 @@
+using NObfs.Tree;
+using NObfs.Dump;
+using NObfs.Graph;
+using System;
+using System.IO;
+using Nemerle.Collections;
+
+namespace NObfs {
+	public module NObfs {
+		public mutable tree : NExpr = Dump.DumpTree;
+		public Main() : void {
+			def Cond = NExpr.Var("Cond");
+			
+			tree.Print();
+			
+			def Expr(expr : NExpr) {
+				| Var(var) => var : object
+				| Number(num) => num : object
+				| x => x
+			}
+			
+			def FindAssign(tree, var, retAssign = false) : NExpr {
+				tree.Walk(
+					fun(expr : NExpr) {
+						| Assign(left, right) =>
+							match(left) {
+								| Var(var_) when var_ == var => 
+									if(retAssign)
+										expr
+									else
+										right
+								| _ => null
+							}
+						| _ => null
+					}
+				) :> NExpr
+			}
+			
+			def FindAllAssigns(tree, var, retAssign = false) {
+				tree.WalkAll(
+					fun(expr : NExpr) {
+						| Assign(left, right) =>
+							match(left) {
+								| Var(var_) when var == null || var_ == var => 
+									if(retAssign)
+										expr
+									else
+										right
+								| _ => null
+							}
+						| _ => null
+					}
+				)
+			}
+			
+			def EvaluateVar(var, assign, stack) {
+				match(stack) {
+					| [] =>
+						def expr = FindAssign(tree, var, true);
+						match(expr) {
+							| Assign(_, right) =>
+								(right, expr, [])
+							| _ => throw Exception("psfdojsdp")
+						}
+					| case :: rest =>
+						def FindCur(assigns) {
+							| [] => null
+							| head :: tail =>
+								if(head : object == assign)
+									tail
+								else
+									FindCur(tail)
+						}
+						
+						def assigns = FindAllAssigns(case, null, true);
+						def assigns = {
+							if(assigns.Contains(assign : object))
+								FindCur(assigns)
+							else
+								assigns
+						};
+						
+						def FindVar(assigns) {
+							| [] => EvaluateVar(var, assign, rest)
+							| expr :: rest =>
+								def expr = expr :> NExpr;
+								match(expr) {
+									| Assign(left, right) =>
+										match(left) {
+											| Var(var_) when var_ == var =>
+												(right, expr, stack)
+											| _ => FindVar(rest)
+										}
+									| _ => throw Exception("psdfoj");
+								}
+						}
+						FindVar(assigns)
+				}
+			}
+			
+			def Evaluate(expr : NExpr, assign, stack) : int {
+				match(expr) {
+					| Comp(type_, left, right) =>
+						def left  = Evaluate(left, assign, stack);
+						def right = Evaluate(right, assign, stack);
+						if(
+							match(type_) {
+								| EQ  => left == right
+								| NE  => left != right
+								| SGE => left >= right
+								| UGE => left >= right
+								| SLE => left <= right
+								| ULE => left <= right
+								| SGT => left >  right
+								| UGT => left >  right
+								| SLT => left <  right
+								| ULT => left <  right
+							}
+						)
+							1
+						else
+							0
+					
+					| Arith(type_, left, right) =>
+						def left  = Evaluate(left, assign, stack);
+						def right = Evaluate(right, assign, stack);
+						
+						match(type_) {
+							| Or   => unchecked (left |  right)
+							| Xor  => unchecked  left ^  right
+							| And  => unchecked  left &  right
+							| SShr => unchecked  left >> right
+							| UShr => unchecked  left >> right
+							| Shl  => unchecked  left << right
+							| Add  => unchecked  left +  right
+							| Sub  => unchecked  left -  right
+							| Mul  => unchecked  left *  right
+							| SDiv => unchecked  left /  right
+							| UDiv => unchecked  left /  right
+							| SMod => unchecked  left %  right
+							| UMod => unchecked  left %  right
+						}
+					
+					| Cast(type_, expr) =>
+						def value = Evaluate(expr, assign, stack);
+						match(type_) {
+							| "unsigned __int8" => value % 0x100
+							| "char" => value % 0x80
+							| "unsigned __int16" => value % 0x10000
+							| "state int" | "signed int" | "int" =>  value
+							| x =>
+								if(x.EndsWith("*"))
+									value
+								else
+									throw Exception(String.Format("Unknown cast type '{0}'", x))
+						}
+					
+					| Not(expr) =>
+						~Evaluate(expr, assign, stack)
+					
+					| Func(func) =>
+						Int32.Parse(func.Substring(4), Globalization.NumberStyles.AllowHexSpecifier)
+					
+					| Addr(addr) => addr :> int
+					
+					| Var(var) =>
+						Evaluate(EvaluateVar(var, assign, stack))
+					
+					| Number(num) => unchecked num :> int
+					| x =>
+						Console.WriteLine("Huh");
+						assign.Print();
+						x.Print();
+						throw Exception(String.Format("Unknown type {0}", x))
+				}
+			}
+			
+			Console.WriteLine("Finding stateDeobfsVar");
+			def stateDeobfsVar = tree.Walk(
+				fun(expr : NExpr) {
+					| Switch(expr, _) => Expr(expr)
+					| _ => null
+				}
+			) :> string;
+			
+			Console.WriteLine("Finding stateObfsVar and stateOff");
+			def (stateObfsVar, stateOff) = match(FindAssign(tree, stateDeobfsVar)) {
+				| Arith(type_, left, right) =>
+					(
+						Expr(left) :> string,
+						match(type_) {
+							| Add =>   Expr(right) :> long
+							| Sub => -(Expr(right) :> long)
+							| _ => throw Exception("WTF?")
+						}
+					)
+				| _ => throw Exception("Uh?")
+			}
+			
+			Console.WriteLine("Finding initialState");
+			def expr = FindAssign(tree, stateObfsVar, true);
+			def initialState = match(expr) {
+				| Assign(_, right) =>
+					(Evaluate(right, expr, [tree]) + stateOff) :> int
+				| _ => throw Exception("fpasojd")
+			}
+			
+			Console.WriteLine("Replacing ArithAssigns");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| ArithAssign(type_, left, right) =>
+						NExpr.Assign(
+							left,
+							NExpr.Arith(
+								type_,
+								left,
+								right
+							)
+						)
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Replacing conditional statements");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| Assign(aleft, aright) =>
+						match(aright) {
+							| Arith(type_, left, right)
+								when type_ is NArith.Add =>
+								match(left) {
+									| Arith(type_, else_, _)
+										when type_ is NArith.Mul =>
+										match(right) {
+											| Arith(type_, then, comp)
+												when type_ is NArith.Mul =>
+												NExpr.If(
+													comp,
+													NExpr.Assign(aleft, then),
+													if(aleft == else_)
+														null
+													else
+														NExpr.Assign(aleft, else_)
+												)
+											| _ => null
+										}
+									| _ => null
+								}
+							| _ => null
+						}
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Replacing mods with casts");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| Arith(type_, left, right)
+						when type_ is NArith.SMod =>
+						match(right) {
+							| Number(num) when num == 2147483647 =>
+								NExpr.Cast(
+									"int",
+									left
+								)
+							| _ => null
+						}
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Relocating blocks");
+			def Relocate(expr : NExpr) {
+				| Loc(_, body) =>
+					match(body) {
+						| Block(exprs) =>
+							match(exprs) {
+								| [] => null
+								| head :: _ =>
+									match(head) {
+										| Loc(loc, _) =>
+											NExpr.Loc(
+												loc, 
+												body.Transform(Relocate)
+											)
+										| _ => null
+									}
+								| _ => null
+							}
+						| _ => null
+					}
+				| _ => null
+			}
+			tree = tree.Transform(Relocate);
+			
+			Console.WriteLine("Replacing gotos");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| Goto(loc) =>
+						tree.Walk(
+							fun(expr : NExpr) {
+								| Loc(loc_, body) when loc_ == loc =>
+									body
+								| _ => null
+							}
+						) :> NExpr
+					| _ => null
+				}
+			);
+			
+			mutable doneStates : list [int] = [];
+			def connections : Hashtable [int, list [int]] = Hashtable();
+			
+			def ProcessAssigns(stack, assigns : list [object], accum) {
+				match(assigns) {
+					| [] => accum
+					| stateExpr :: rest =>
+						def stateExpr = stateExpr :> NExpr;
+						match(stateExpr) {
+							| Assign(_, right) =>
+								def nextState = Evaluate(
+									NExpr.Cast(
+										"state int",
+										NExpr.Arith(
+											NArith.Add(),
+											right,
+											NExpr.Number(stateOff)
+										)
+									),
+									stateExpr, 
+									stack
+								);
+								
+								ProcessAssigns(stack, rest, nextState :: accum)
+							| _ => throw Exception("sofjsp")
+						}
+				}
+			}
+			
+			def WalkStates(state, stack) {
+				def case = {
+					if(doneStates.Contains(state))
+						null
+					else {
+						doneStates = state :: doneStates;
+						tree.Walk(
+							fun(expr : NExpr) {
+								| Case(values, _) when values.Contains(state) => expr
+								| _ => null
+							}
+						) :> NExpr
+					}
+				}
+				
+				unless(case == null) {
+					def stack = case :: stack;
+					def nextStates = ProcessAssigns(stack, FindAllAssigns(case, stateObfsVar, true), []);
+					mutable connects : list [int] = [];
+					
+					foreach(next in nextStates) {
+						WalkStates(next, stack);
+						connects = next :: connects;
+					}
+					
+					connections[state] = connects;
+				}
+			}
+			
+			Console.WriteLine("Finding state connections");
+			WalkStates(initialState, []);
+			
+			Console.WriteLine("Stripping dead connections");
+			foreach((state, conn) in connections.KeyValuePairs) {
+				mutable newconn : list [int] = [];
+				
+				foreach(sub in conn)
+					when(connections.ContainsKey(sub))
+						newconn = sub :: newconn;
+				
+				connections[state] = newconn
+			}
+			
+			Console.WriteLine("Emitting dot graph");
+			def graph = NGraph.Build(initialState, connections);
+			def graph = graph.Reduce();
+			graph.OutputDot("Obj\\graph.dot");
+			
+			Console.WriteLine("Assigning conditionals");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| If(cond, then, _) =>
+						match(then) {
+							| Assign(left, _) =>
+								match(left) {
+									| Var(var) when var == stateObfsVar =>
+										NExpr.Assign(
+											NExpr.Var("Cond"),
+											cond
+										)
+									| _ => null
+								}
+							| _ => null
+						}
+					| _ => null
+				}
+			);
+
+			Console.WriteLine("Stripping stateObfs assignments");
+			tree = tree.Transform(
+				fun(expr : NExpr) {
+					| Assign(left, _) =>
+						match(left) {
+							| Var(var) when var == stateObfsVar =>
+								NExpr.Nil()
+							| _ => null
+						}
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Removing continue, break, and locations");
+			def Cull(expr : NExpr) {
+				| Continue | Break => NExpr.Nil()
+				| Loc(_, expr) => expr.Transform(Cull)
+				| _ => null
+			}
+			tree = tree.Transform(Cull);
+			
+			def FindState(state) {
+				tree.Walk(
+					fun(expr : NExpr) {
+						| Case(case, body) when case.Contains(state) =>
+							body
+						| _ => null
+					}
+				) :> NExpr
+			}
+			
+			def graphExprs : Hashtable [NGraph, NExpr] = Hashtable();
+			
+			def BuildExpr(graph, doEnd : bool = true) {
+				if(graphExprs.ContainsKey(graph))
+					NExpr.NamedGoto(
+						String.Format(
+							"state_{0:X}",
+							graph.GetState()
+						)
+					)
+				else {
+					graphExprs[graph] = null;
+					def state = graph.GetState();
+					def body = FindState(state);
+					def node = NExpr.Label(
+						String.Format(
+							"state_{0:X}",
+							state
+						),
+						match(graph) {
+							| While(_, loop, end) =>
+								def endExpr = BuildExpr(end);
+								NExpr.Block([
+									NExpr.While(
+										NExpr.Number(1),
+										NExpr.Block([
+											body,
+											NExpr.If(
+												NExpr.LNot(NExpr.Var("Cond")),
+												NExpr.Break(),
+												null
+											),
+											BuildExpr(loop, false)
+										])
+									),
+									endExpr
+								])
+							| _ =>
+							NExpr.Block([
+								body,
+								match(graph) {
+									| UnCond(_, next) =>
+										if(doEnd)
+											BuildExpr(next)
+										else
+											NExpr.Nil()
+									| Cond(_, taken, not) =>
+										NExpr.If(
+											NExpr.Var("Cond"),
+											BuildExpr(taken),
+											BuildExpr(not)
+										)
+									| When(_, taken, end) =>
+										def endExpr = BuildExpr(end);
+										NExpr.Block([
+											NExpr.If(
+												NExpr.Var("Cond"),
+												BuildExpr(taken, false),
+												null
+											),
+											endExpr
+										])
+									
+									| If(_, taken, not, end) =>
+										def endExpr = BuildExpr(end);
+										NExpr.Block([
+											NExpr.If(
+												NExpr.Var("Cond"),
+												BuildExpr(taken, false),
+												BuildExpr(not, false)
+											),
+											endExpr
+										])
+									
+									| Body | End =>
+										NExpr.Nil()
+									
+									| _ => throw Exception("spfoj")
+								}
+							])
+						}
+					);
+					graphExprs[graph] = node;
+					node
+				}
+			}
+			
+			Console.WriteLine("Rebuilding function structure");
+			def rebuilt = NExpr.Block(
+				(
+					BuildExpr(graph) ::
+					(
+						tree.WalkAll(
+							fun(expr : NExpr) {
+								| Loc | Block => null
+								| Assign => expr
+								| _ =>
+									throw NExpr.WalkEndException()
+							}
+						).Map(
+							fun(expr) { expr :> NExpr }
+						)
+					)
+				).Reverse()
+			);
+			
+			Console.WriteLine("Finding label references");
+			mutable labels : list [string] = [];
+			_ = rebuilt.Walk(
+				fun(expr : NExpr) {
+					| NamedGoto(label) =>
+						unless(labels.Contains(label))
+							labels = label :: labels;
+						null
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Stripping unused labels");
+			def Cull(expr : NExpr) {
+				| Label(label, expr) =>
+					if(labels.Contains(label))
+						null
+					else
+						expr.Transform(Cull)
+				| _ => null
+			}
+			def rebuilt = rebuilt.Transform(Cull);
+			
+			Console.WriteLine("Coalescing nested blocks");
+			def Coalesce(expr : NExpr) {
+				| Block(exprs) =>
+					mutable re : list [NExpr] = [];
+					
+					foreach(expr in exprs)
+						match(expr.Transform(Coalesce)) {
+							| Block(exprs) =>
+								foreach(expr in exprs)
+									re = expr :: re;
+							
+							| expr => re = expr :: re
+						}
+					
+					NExpr.Block(re.Reverse())
+				
+				| _ => null
+			}
+			def rebuilt = rebuilt.Transform(Coalesce);
+			
+			Console.WriteLine("Stripping dead code");
+			def StripDead(rebuilt) {
+				mutable removed : int = 0;
+				def uses : Hashtable [string, int] = Hashtable();
+				
+				_ = rebuilt.Walk(
+					fun(expr : NExpr) {
+						| Var(var) =>
+							if(uses.ContainsKey(var))
+								uses[var]++;
+							else
+								uses[var] = 1;
+							null
+						| _ => null
+					}
+				);
+				
+				_ = rebuilt.Walk(
+					fun(expr : NExpr) {
+						| Assign(left, right) =>
+							match(left) {
+								| Var(var) =>
+									_ = right.Walk(
+										fun(expr : NExpr) {
+											| Var(var_) when var_ == var =>
+												uses[var]--;
+												null
+											| _ => null
+										}
+									);
+									uses[var]--
+								| _ => ()
+							}
+							
+							null
+						| _ => null
+					}
+				);
+				
+				def rebuilt = rebuilt.Transform(
+					fun(expr : NExpr) {
+						| Assign(left, _) =>
+							match(left) {
+								| Var(var) when var != "Cond" =>
+									if(uses[var] == 0) {
+										removed++;
+										NExpr.Nil()
+									} else
+										null
+								| _ => null
+							}
+						| _ => null
+					}
+				);
+				
+				def IsDead(dest, expr) {
+					def dead = expr.Walk(
+						fun(expr : NExpr) {
+							| Assign(left, right)
+								when left == dest =>
+								right.Walk(
+									fun(expr : NExpr) {
+										if(expr == dest)
+											true : object
+										else
+											null
+									}
+								) == null
+							
+							| x when x == dest =>
+								false : object
+							
+							| _ => null
+						}
+					);
+					
+					if(dead == null || (dead :> bool) == false)
+						false
+					else
+						true
+				}
+				
+				def Cull(exprs : list [NExpr], accum) {
+					match(exprs) {
+						| [] => accum
+						| expr :: rest =>
+							match(expr) {
+								| Assign(left, _) =>
+									if(IsDead(left, NExpr.Block(rest)))
+										Cull(rest, accum)
+									else
+										Cull(rest, expr :: accum)
+								| _ => Cull(rest, expr :: accum)
+							}
+					}
+				}
+				
+				def rebuilt = rebuilt.Transform(
+					fun(expr : NExpr) {
+						| Block(exprs) =>
+							def filt = Cull(exprs, []);
+							if(filt.Length == exprs.Length)
+								null
+							else
+								NExpr.Block(filt.Reverse())
+						| _ => null
+					}
+				);
+				
+				mutable changed : bool = false;
+				def Cull(expr : NExpr) {
+					| Block(exprs) =>
+						def filt = exprs.Filter(
+							fun(expr : NExpr) {
+								| Nil => false
+								| Loc(_, body)
+								| Label(_, body) =>
+									match(body) {
+										| Nil => false
+										| _ => true
+									}
+								| _ => true
+							}
+						);
+						
+						if(filt.Length == exprs.Length)
+							null
+						else {
+							changed = true;
+							NExpr.Block(filt)
+						}
+					
+					| If(cond, taken, not) =>
+						def CullIf(expr : NExpr) {
+							| null => false
+							| Block(exprs) =>
+								if(exprs.Length == 0)
+									false
+								else
+									true
+							| Nil => false
+							| _ => true
+						}
+						
+						def takenC = CullIf(taken);
+						def notC = CullIf(not);
+						
+						if(takenC == false && notC == false) {
+							changed = true;
+							NExpr.Nil()
+						} else if(notC == false && not != null) {
+							changed = true;
+							NExpr.If(
+								cond,
+								taken,
+								null
+							)
+						} else
+							null
+					
+					| _ => null
+				}
+				def rebuilt = rebuilt.Transform(Cull);
+				
+				if(removed == 0 && !changed)
+					rebuilt
+				else
+					StripDead(rebuilt)
+			}
+			def rebuilt = StripDead(rebuilt);
+			
+			mutable replaceCond : NExpr = null;
+			mutable stripConds : list [NExpr] = [];
+			
+			Console.WriteLine("Replacing Cond in if/while");
+			def CullCond(expr : NExpr) {
+				| Assign(left, right)
+					when left == Cond =>
+					replaceCond = right;
+					null
+				
+				| Assign(left, _) when replaceCond != null =>
+					unless(
+						replaceCond.Walk(
+							fun(expr : NExpr) {
+								if(expr == left)
+									true : object
+								else
+									null
+							}
+						) == null
+					)
+						replaceCond = null;
+					null
+				
+				| If(cond, then, else_)
+					when replaceCond != null =>
+					
+					def replace = match(cond) {
+						| x when x == Cond =>
+							replaceCond
+						| LNot(x) when x == Cond =>
+							NExpr.LNot(replaceCond)
+						| _ => null
+					};
+					
+					if(replace == null)
+						null
+					else {
+						stripConds = replaceCond :: stripConds;
+						def expr = NExpr.If(
+							replace, 
+							then.Transform(CullCond),
+							if(else_ == null)
+								null
+							else
+								else_.Transform(CullCond)
+						);
+						replaceCond = null;
+						expr
+					}
+				
+				| While(cond, body)
+					when cond == Cond && replaceCond != null =>
+					stripConds = replaceCond :: stripConds;
+					def expr = NExpr.While(replaceCond, body.Transform(CullCond));
+					replaceCond = null;
+					expr
+				
+				| _ => null
+			}
+			def rebuilt = rebuilt.Transform(CullCond);
+			
+			Console.WriteLine("Stripping extraneous Cond assignments");
+			def rebuilt = rebuilt.Transform(
+				fun(expr : NExpr) {
+					| Assign(left, right)
+						when left == Cond && stripConds.Contains(right) =>
+						NExpr.Nil()
+					
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Stripping foo = foo; assignments");
+			def rebuilt = rebuilt.Transform(
+				fun(expr : NExpr) {
+					| Assign(left, right) when left == right =>
+						NExpr.Nil()
+					| _ => null
+				}
+			);
+			
+			Console.WriteLine("Emitting finalized code");
+			rebuilt.Print()
+		}
+	}
+}

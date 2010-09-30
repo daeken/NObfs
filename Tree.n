@@ -1,0 +1,897 @@
+using System;
+
+namespace NObfs.Tree {
+	public variant NArith {
+		| Or
+		| Xor
+		| And
+		| SShr
+		| UShr
+		| Shl
+		| Add
+		| Sub
+		| Mul
+		| SDiv
+		| UDiv
+		| SMod
+		| UMod
+		
+		public static @==(left : NArith, right : NArith) : bool {
+			| (Or(), Or()) => true
+			| (Xor(), Xor()) => true
+			| (And(), And()) => true
+			| (SShr(), SShr()) => true
+			| (UShr(), UShr()) => true
+			| (Shl(), Shl()) => true
+			| (Add(), Add()) => true
+			| (Sub(), Sub()) => true
+			| (Mul(), Mul()) => true
+			| (SDiv(), SDiv()) => true
+			| (UDiv(), UDiv()) => true
+			| (SMod(), SMod()) => true
+			| (UMod(), UMod()) => true
+			| _ => false
+		}
+	}
+	
+	public variant NComp {
+		| EQ
+		| NE
+		| SGE
+		| UGE
+		| SLE
+		| ULE
+		| SGT
+		| UGT
+		| SLT
+		| ULT
+		
+		public static @==(left : NComp, right : NComp) : bool {
+			| (EQ(), EQ()) => true
+			| (NE(), NE()) => true
+			| (UGE(), UGE()) => true
+			| (ULE(), ULE()) => true
+			| (UGT(), UGT()) => true
+			| (ULT(), ULT()) => true
+			| (SGE(), SGE()) => true
+			| (SLE(), SLE()) => true
+			| (SGT(), SGT()) => true
+			| (SLT(), SLT()) => true
+			| _ => false
+		}
+	}
+	
+	public variant NIncDec {
+		| Pre
+		| Post
+		
+		public static @==(left : NIncDec, right : NIncDec) : bool {
+			| (Pre(), Pre()) => true
+			| (Post(), Post()) => true
+			| _ => false
+		}
+	}
+	
+	public variant NExpr {
+		| Loc {
+			LocAddr : uint;
+			LocBody : NExpr;
+		}
+		| Label {
+			LabelStr : string;
+			LabelBody : NExpr;
+		}
+		| Block {
+			BlockExprs : list [NExpr];
+		}
+		| Break
+		| Continue
+		| Goto {
+			Target : uint;
+		}
+		| NamedGoto {
+			NamedTarget : string;
+		}
+		| If {
+			IfExpr : NExpr;
+			Then : NExpr;
+			Else : NExpr;
+		}
+		| Return {
+			ReturnExpr : NExpr;
+		}
+		| Switch {
+			SwitchExpr : NExpr;
+			Cases : list [NExpr];
+		}
+		| Case {
+			Values : list [int];
+			CaseBody : NExpr;
+		}
+		| While {
+			WhileExpr : NExpr;
+			WhileBody : NExpr;
+		}
+		
+		| Comma {
+			LeftExpr : NExpr;
+			RightExpr : NExpr;
+		}
+		
+		| Assign {
+			DestExpr : NExpr;
+			SrcExpr : NExpr;
+		}
+		
+		| ArithAssign {
+			AArithType : NArith;
+			ADestExpr : NExpr;
+			ASrcExpr : NExpr;
+		}
+		
+		| Ternary {
+			TernExpr : NExpr;
+			TernThen : NExpr;
+			TernElse : NExpr;
+		}
+		
+		| LOr {
+			LOrLeft : NExpr;
+			LOrRight : NExpr;
+		}
+		
+		| LAnd {
+			LAndLeft : NExpr;
+			LAndRight : NExpr;
+		}
+		
+		| Comp {
+			CompType : NComp;
+			CompLeft : NExpr;
+			CompRight : NExpr;
+		}
+		
+		| Arith {
+			ArithType : NArith;
+			ArithLeft : NExpr;
+			ArithRight : NExpr;
+		}
+		
+		| Cast {
+			CastType : string;
+			CastExpr : NExpr;
+		}
+		
+		| LNot {
+			LNotExpr : NExpr;
+		}
+		
+		| Not {
+			NotExpr : NExpr;
+		}
+		
+		| Deref {
+			DerefExpr : NExpr;
+			DerefSize : uint;
+		}
+		
+		| Ref {
+			RefExpr : NExpr;
+		}
+		
+		| Inc {
+			IncType : NIncDec;
+			IncExpr : NExpr;
+		}
+		
+		| Dec {
+			DecType : NIncDec;
+			DecExpr : NExpr;
+		}
+		
+		| Call {
+			CallExpr : NExpr;
+			CallArgs : list [NExpr];
+		}
+		
+		| Index {
+			IndexBase : NExpr;
+			IndexOff : NExpr;
+		}
+		
+		| Member {
+			MemberBase : NExpr;
+			MemberOff : int;
+		}
+		
+		| MemberDeref {
+			DMemberBase : NExpr;
+			DMemberOff : int;
+			DMemberSize : uint;
+		}
+		
+		| Func {
+			FuncName : string;
+		}
+		
+		| Addr {
+			Addr_ : uint;
+		}
+		
+		| Var {
+			Var_ : string;
+		}
+		
+		| Number {
+			Num : long;
+		}
+		
+		| Nil
+		
+		[Nemerle.OverrideObjectEquals]
+		public Equals(right : NExpr) : bool {
+			this == right
+		}
+		
+		public static @==(left : NExpr, right : NExpr) : bool {
+			match((left, right)) {
+				| (_, null) | (null, _) => left : object == right : object
+				| (Loc(la, lb), Loc(ra, rb)) => la == ra && lb == rb
+				| (Label(la, lb), Label(ra, rb)) => la == ra && lb == rb
+				| (Block(la), Block(ra)) => la == ra
+				| (Break(), Break()) => true
+				| (Continue(), Continue()) => true
+				| (Goto(la), Goto(ra)) => la == ra
+				| (NamedGoto(la), NamedGoto(ra)) => la == ra
+				| (If(la, lb, lc), If(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (Return(la), Return(ra)) => la == ra
+				| (Switch(la, lb), Switch(ra, rb)) => la == ra && lb == rb
+				| (Case(la, lb), Case(ra, rb)) => la == ra && lb == rb
+				| (While(la, lb), While(ra, rb)) => la == ra && lb == rb
+				| (Comma(la, lb), Comma(ra, rb)) => la == ra && lb == rb
+				| (Assign(la, lb), Assign(ra, rb)) => la == ra && lb == rb
+				| (ArithAssign(la, lb, lc), ArithAssign(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (Ternary(la, lb, lc), Ternary(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (LOr(la, lb), LOr(ra, rb)) => la == ra && lb == rb
+				| (LAnd(la, lb), LAnd(ra, rb)) => la == ra && lb == rb
+				| (Comp(la, lb, lc), Comp(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (Arith(la, lb, lc), Arith(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (Cast(la, lb), Cast(ra, rb)) => la == ra && lb == rb
+				| (LNot(la), LNot(ra)) => la == ra
+				| (Not(la), Not(ra)) => la == ra
+				| (Deref(la, lb), Deref(ra, rb)) => la == ra && lb == rb
+				| (Ref(la), Ref(ra)) => la == ra
+				| (Inc(la, lb), Inc(ra, rb)) => la == ra && lb == rb
+				| (Dec(la, lb), Dec(ra, rb)) => la == ra && lb == rb
+				| (Call(la, lb), Call(ra, rb)) => la == ra && lb == rb
+				| (Index(la, lb), Index(ra, rb)) => la == ra && lb == rb
+				| (Member(la, lb), Member(ra, rb)) => la == ra && lb == rb
+				| (MemberDeref(la, lb, lc), MemberDeref(ra, rb, rc)) => la == ra && lb == rb && lc == rc
+				| (Func(la), Func(ra)) => la == ra
+				| (Addr(la), Addr(ra)) => la == ra
+				| (Var(la), Var(ra)) => la == ra
+				| (Number(la), Number(ra)) => la == ra
+				| (Nil(), Nil()) => true
+				| _ => false
+			}
+		}
+		
+		static PrintArith(type_ : NArith) : string {
+			| Or   => "|"
+			| Xor  => "^"
+			| And  => "&"
+			| SShr => ">>"
+			| UShr => ">>"
+			| Shl  => "<<"
+			| Add  => "+"
+			| Sub  => "-"
+			| Mul  => "*"
+			| SDiv => "/"
+			| UDiv => "/"
+			| SMod => "%"
+			| UMod => "%"
+		}
+		
+		static PrintComp(type_ : NComp) : string {
+			| EQ  => "=="
+			| NE  => "!="
+			| SGE => ">="
+			| UGE => ">="
+			| SLE => "<="
+			| ULE => "<="
+			| SGT => ">"
+			| UGT => ">"
+			| SLT => "<"
+			| ULT => "<"
+		}
+		
+		public PrintExpr() : string {
+			match(this) {
+				| Comma(left, right) =>
+					String.Format(
+						"({0}), ({1})", 
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| Assign(left, right) =>
+					String.Format(
+						"{0} = {1}", 
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| ArithAssign(type_, left, right) =>
+					String.Format(
+						"{1} {0}= {2}", 
+						PrintArith(type_),
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| Ternary(expr, then, else_) =>
+					String.Format(
+						"({0}) ? ({1}) : ({2})", 
+						expr.PrintExpr(), 
+						then.PrintExpr(), 
+						else_.PrintExpr()
+					)
+				
+				| LOr(left, right) =>
+					String.Format(
+						"({0}) || ({1})", 
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| LAnd(left, right) =>
+					String.Format(
+						"({0}) && ({1})", 
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| Comp(type_, left, right) =>
+					String.Format(
+						"({1}) {0} ({2})", 
+						PrintComp(type_),
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| Arith(type_, left, right) =>
+					String.Format(
+						"({1}) {0} ({2})", 
+						PrintArith(type_),
+						left.PrintExpr(), 
+						right.PrintExpr()
+					)
+				
+				| Cast(type_, expr) =>
+					String.Format(
+						"({0}) ({1})", 
+						type_, 
+						expr.PrintExpr()
+					)
+				
+				| LNot(expr) =>
+					String.Format(
+						"!({0})", 
+						expr.PrintExpr()
+					)
+				
+				| Not(expr) =>
+					String.Format(
+						"~({0})", 
+						expr.PrintExpr()
+					)
+				
+				| Deref(expr, _) =>
+					String.Format(
+						"*({0})", 
+						expr.PrintExpr()
+					)
+				
+				| Ref(expr) =>
+					String.Format(
+						"&({0})", 
+						expr.PrintExpr()
+					)
+				
+				| Inc(type_, expr) =>
+					String.Format(
+						match(type_) {
+							| Pre => "++({0})"
+							| Post => "({0})++"
+						},
+						expr.PrintExpr()
+					)
+				
+				| Dec(type_, expr) =>
+					String.Format(
+						match(type_) {
+							| Pre => "--({0})"
+							| Post => "({0})--"
+						},
+						expr.PrintExpr()
+					)
+				
+				| Call(expr, args) =>
+					def PrintArgs(args) {
+						| [] => ""
+						| head :: tail =>
+							String.Format(
+								"{0}{1}{2}",
+								head.PrintExpr(),
+								{
+									if(tail == [])
+										""
+									else
+										", "
+								},
+								PrintArgs(tail)
+							)
+					}
+					String.Format(
+						"{0}({1})",
+						expr.PrintExpr(),
+						PrintArgs(args)
+					)
+				
+				| Index(base_, off) =>
+					String.Format(
+						"{0}[{1}]",
+						base_.PrintExpr(),
+						off.PrintExpr()
+					)
+				
+				| Member(base_, off) =>
+					String.Format(
+						"({0})+{1}",
+						base_.PrintExpr(),
+						off
+					)
+				
+				| MemberDeref(base_, off, _) =>
+					String.Format(
+						"(({0})+{1})",
+						base_.PrintExpr(),
+						off
+					)
+				
+				| Func(func) => func
+				
+				| Addr(addr) => NExpr.Number(addr :> long).PrintExpr()
+				
+				| Var(var) => var
+				
+				| Number(num) =>
+					if(num <= 0 || (num < 0xFFF && (num & 3) != 0))
+						num.ToString()
+					else
+						String.Format("0x{0:X}", num)
+				
+				| x =>
+					x.ToString()
+			}
+		}
+		
+		public Print(tabs : int = 0, noBrace : bool = false) : void {
+			def PrintTabs(tabs) {
+				for(mutable i : int = 0; i < tabs; ++i)
+					Console.Write("\t")
+			}
+			
+			match(this) {
+				| Loc(_, expr) =>
+					expr.Print(tabs, noBrace)
+				
+				| Label(label, expr) =>
+					PrintTabs(tabs);
+					Console.WriteLine("{0}:", label);
+					expr.Print(tabs, true)
+				
+				| Block(exprs) =>
+					unless(noBrace) {
+						PrintTabs(tabs-1);
+						Console.WriteLine("{")
+					}
+					
+					foreach(expr in exprs)
+						expr.Print(
+							if(tabs == 0)
+								tabs+1
+							else
+								tabs,
+							true
+						);
+					
+					unless(noBrace) {
+						PrintTabs(tabs-1);
+						Console.WriteLine("}")
+					}
+				
+				| Break =>
+					PrintTabs(tabs);
+					Console.WriteLine("break;")
+				
+				| Continue =>
+					PrintTabs(tabs);
+					Console.WriteLine("continue;")
+				
+				| Goto(target) =>
+					PrintTabs(tabs);
+					Console.WriteLine("goto {0:X};", target)
+				
+				| NamedGoto(target) =>
+					PrintTabs(tabs);
+					Console.WriteLine("goto {0};", target)
+				
+				| If(expr, then, else_) =>
+					PrintTabs(tabs);
+					Console.WriteLine("if({0})", expr.PrintExpr());
+					
+					def then = {
+						if(then is NExpr.Block)
+							then
+						else
+							NExpr.Block([then])
+					};
+					
+					then.Print(tabs+1);
+					
+					unless(else_ == null) {
+						PrintTabs(tabs);
+						Console.WriteLine("else");
+						
+						def else_ = {
+							if(else_ is NExpr.Block)
+								else_
+							else
+								NExpr.Block([else_])
+						};
+						else_.Print(tabs+1)
+					}
+				
+				| Return(expr) =>
+					PrintTabs(tabs);
+					if(expr == null)
+						Console.WriteLine("return;")
+					else
+						Console.WriteLine("return {0};", expr.PrintExpr())
+				
+				| Switch(expr, cases) =>
+					PrintTabs(tabs);
+					Console.WriteLine(
+						"switch({0}) {{",
+						expr.PrintExpr()
+					);
+					
+					foreach(case in cases)
+						case.Print(tabs+1)
+				
+				| Case(values, body) =>
+					foreach(value in values) {
+						PrintTabs(tabs);
+						Console.WriteLine(
+							"case 0x{0:X}:",
+							value
+						)
+					}
+					
+					body.Print(tabs+1)
+				
+				| While(expr, body) =>
+					PrintTabs(tabs);
+					Console.WriteLine(
+						"while({0})",
+						expr.PrintExpr()
+					);
+					
+					def body = {
+						if(body is NExpr.Block)
+							body
+						else
+							NExpr.Block([body])
+					};
+					body.Print(tabs+1)
+				
+				| Nil => ()
+				
+				| x =>
+					PrintTabs(tabs);
+					Console.WriteLine("{0};", x.PrintExpr())
+			}
+		}
+		
+		public Transform(func : NExpr -> NExpr) : NExpr {
+			def TransformList(exprs : list [NExpr], func, accum : list [NExpr] = []) {
+				match(exprs) {
+					| [] => accum.Reverse()
+					| head :: tail =>
+						TransformList(
+							tail,
+							func,
+							head.Transform(func) :: accum
+						)
+				}
+			}
+			
+			def ret = func(this);
+			
+			if(ret == null)
+				match(this) {
+					| Loc(loc, expr) => NExpr.Loc(loc, expr.Transform(func))
+					| Label(label, expr) => NExpr.Label(label, expr.Transform(func))
+					| Block(exprs) => NExpr.Block(TransformList(exprs, func))
+					| If(expr, then, else_) =>
+						NExpr.If(
+							expr.Transform(func),
+							then.Transform(func),
+							{
+								if(else_ == null)
+									null
+								else
+									else_.Transform(func)
+							}
+						)
+					| Return(expr) => NExpr.Return(expr.Transform(func))
+					| Switch(expr, cases) =>
+						NExpr.Switch(
+							expr.Transform(func),
+							TransformList(cases, func)
+						)
+					| Case(values, body) =>
+						NExpr.Case(
+							values,
+							body.Transform(func)
+						)
+					| While(expr, body) =>
+						NExpr.While(
+							expr.Transform(func),
+							body.Transform(func)
+						)
+					
+					| Comma(left, right) =>
+						NExpr.Comma(
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| Assign(left, right) =>
+						NExpr.Assign(
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| ArithAssign(type_, left, right) =>
+						NExpr.ArithAssign(
+							type_,
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| Ternary(expr, then, else_) =>
+						NExpr.Ternary(
+							expr.Transform(func),
+							then.Transform(func),
+							else_.Transform(func)
+						)
+					| LOr(left, right) =>
+						NExpr.LOr(
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| LAnd(left, right) =>
+						NExpr.LAnd(
+							left.Transform(func),
+							right.Transform(func)
+						)
+					
+					| Comp(type_, left, right) =>
+						NExpr.Comp(
+							type_,
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| Arith(type_, left, right) =>
+						NExpr.Arith(
+							type_,
+							left.Transform(func),
+							right.Transform(func)
+						)
+					| Cast(type_, expr) =>
+						NExpr.Cast(
+							type_,
+							expr.Transform(func)
+						)
+					| LNot(expr) =>
+						NExpr.LNot(
+							expr.Transform(func)
+						)
+					| Not(expr) =>
+						NExpr.Not(
+							expr.Transform(func)
+						)
+					| Deref(expr, size) =>
+						NExpr.Deref(
+							expr.Transform(func),
+							size
+						)
+					| Ref(expr) =>
+						NExpr.Ref(
+							expr.Transform(func)
+						)
+					| Inc(type_, expr) =>
+						NExpr.Inc(
+							type_,
+							expr.Transform(func)
+						)
+					| Dec(type_, expr) =>
+						NExpr.Dec(
+							type_,
+							expr.Transform(func)
+						)
+					| Call(expr, args) =>
+						NExpr.Call(
+							expr.Transform(func),
+							TransformList(args, func)
+						)
+					| Index(base_, off) =>
+						NExpr.Index(
+							base_.Transform(func),
+							off.Transform(func)
+						)
+					| Member(base_, off) =>
+						NExpr.Member(
+							base_.Transform(func),
+							off
+						)
+					| MemberDeref(base_, off, size) =>
+						NExpr.MemberDeref(
+							base_.Transform(func),
+							off,
+							size
+						)
+					
+					| x => x
+				}
+			else
+				ret
+		}
+		
+		public Walk(func : NExpr -> object) : object {
+			def WalkList(exprs, func) {
+				match(exprs) {
+					| [] => null
+					| head :: tail =>
+						def ret = head.Walk(func) : object;
+						if(ret == null)
+							WalkList(tail, func)
+						else
+							ret
+				}
+			}
+			
+			def ret = func(this);
+			if(ret == null) {
+				match(this) {
+					| Loc(_, a)
+					| Label(_, a)
+					| Return(a)
+					| Case(_, a)
+					| LNot(a)
+					| Not(a)
+					| Deref(a, _)
+					| Ref(a)
+					| Inc(_, a)
+					| Dec(_, a)
+					| Member(a, _)
+					| Cast(_, a)
+					| MemberDeref(a, _, _) =>
+						a.Walk(func)
+					
+					| Switch(a, b)
+					| Call(a, b) =>
+						def ret = a.Walk(func);
+						if(ret == null)
+							WalkList(b, func)
+						else
+							ret
+					
+					| Block(body) => WalkList(body, func)
+					
+					| While(a, b)
+					| Comma(a, b)
+					| Assign(a, b)
+					| ArithAssign(_, a, b)
+					| LOr(a, b)
+					| LAnd(a, b)
+					| Comp(_, a, b)
+					| Arith(_, a, b)
+					| Index(a, b) =>
+						def ret = a.Walk(func);
+						if(ret == null)
+							b.Walk(func)
+						else
+							ret
+					
+					| If(a, b, c)
+					| Ternary(a, b, c) =>
+						def ret = a.Walk(func);
+						if(ret == null) {
+							def ret = b.Walk(func);
+							if(ret == null && c != null)
+								c.Walk(func)
+							else
+								ret
+						} else
+							ret
+					
+					| Goto
+					| NamedGoto
+					| Continue
+					| Break
+					| Number
+					| Var
+					| Func
+					| Addr
+					| Nil => null
+				}
+			} else
+				ret
+		}
+		
+		public class WalkEndException : Exception {
+			public this() {}
+		}
+		
+		public WalkAll(func : NExpr -> object, mutable accum : list [object] = null) : list [object] {
+			def WalkList(exprs, func, accum) {
+				match(exprs) {
+					| [] => accum
+					| head :: tail =>
+						WalkList(
+							tail,
+							func,
+							head.WalkAll(func, accum)
+						)
+				}
+			}
+			
+			when(accum == null)
+				accum = [];
+			
+			try {
+				def ret = func(this);
+				unless(ret == null)
+					accum = ret :: accum;
+					
+				match(this) {
+					| Loc(_, body)
+					| Label(_, body)
+					| Case(_, body)
+					| While(_, body) => body.WalkAll(func, accum)
+					
+					| Switch(_, body)
+					| Block(body) => WalkList(body, func, accum)
+					
+					| If(_, then, else_) =>
+						def then = then.WalkAll(
+							func,
+							accum
+						);
+						if(else_ == null)
+							then
+						else
+							else_.WalkAll(
+								func,
+								then
+							)
+					
+					| _ => accum
+				}
+			} catch {
+				| _ is WalkEndException => accum
+				| e => throw e
+			}
+		}
+	}
+}

@@ -1,0 +1,11 @@
+using NObfs.Tree;
+using System;
+using Nemerle.Collections;
+
+namespace NObfs {
+	module Simplify {
+		public Simplify(tree : NExpr) : NExpr {
+			tree
+		}
+	}
+}

@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<project name="NObfs" default="build" basedir=".">
+	<description>Modular deobfuscator</description>
+	<property name="debug" value="true" overwrite="false" />
+	<target name="clean" description="Clean build directory">
+		<delete failonerror="false">
+			<fileset>
+				<include name="Obj\*.dll" />
+				<include name="Obj\*.exe" />
+				<include name="Obj\*.pdb" />
+				<include name="Obj\*.png" />
+				<include name="Obj\*.dot" />
+				<include name="Obj\*.txt" />
+			</fileset>
+		</delete>
+	</target>
+	
+	<target name="build" description="Build NObfs">
+		<mkdir dir="Obj" />
+		<ncc target="library" output="Obj\NObfs.Dump.dll" debug="${debug}">
+			<sources>
+				<include name="Tree.n" />
+				<include name="Dump.n" />
+			</sources>
+		</ncc>
+		<ncc target="exe" output="Obj\NObfs.exe" debug="${debug}">
+			<sources>
+				<include name="NObfs.n" />
+				<include name="Graph.n" />
+			</sources>
+			<references>
+				<include name="Obj\NObfs.Dump.dll" />
+			</references>
+		</ncc>
+	</target>
+	
+	<target name="test" description="Test NObfs" depends="build">
+		<exec
+			program="Obj\NObfs.exe"
+			output="Obj\out.txt"
+			managed="true"
+		/>
+		<exec program="dot">
+			<arg value="-oObj\graph.png" />
+			<arg value="-Tpng" />
+			<arg value="Obj\graph.dot" />
+		</exec>
+	</target>
+</project>

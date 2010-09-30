@@ -1,0 +1,509 @@
+using System;
+using System.IO;
+using Nemerle.Collections;
+
+namespace NObfs.Graph {
+	public variant NGraph {
+		// Immature
+		| UnCond {
+			public mutable UnCondState : int;
+			public mutable UnCondNext : NGraph;
+		}
+		| Cond {
+			public mutable CondState : int;
+			public mutable CondTaken : NGraph;
+			public mutable CondNot : NGraph;
+		}
+		| End {
+			public mutable EndState : int;
+		}
+		
+		// Mature
+		| When {
+			public mutable WhenState : int;
+			public mutable WhenThen : NGraph;
+			public mutable WhenEnd : NGraph;
+		}
+		| If {
+			public mutable IfState : int;
+			public mutable IfThen : NGraph;
+			public mutable IfElse : NGraph;
+			public mutable IfEnd : NGraph;
+		}
+		| While {
+			public mutable WhileState : int;
+			public mutable WhileBody : NGraph;
+			public mutable WhileEnd : NGraph;
+		}
+		| Body {
+			public mutable BodyState : int;
+		}
+		
+		public static @<=(left : NGraph, right : NGraph) : bool {
+			if(Comped.Contains(left))
+				true
+			else {
+				Comped = left :: Comped;
+				match((left, right)) {
+					| (UnCond(lstate, lnext), UnCond(rstate, rnext)) =>
+						lstate == rstate && lnext <= rnext
+					| (Cond(lstate, ltaken, lnot), Cond(rstate, rtaken, rnot)) =>
+						lstate == rstate && ltaken <= rtaken && lnot <= rnot
+					| (Body(lstate), Body(rstate))
+					| (End(lstate), End(rstate)) =>
+						lstate == rstate
+					| (When(lstate, lthen, lend), When(rstate, rthen, rend)) =>
+						lstate == rstate && lthen <= rthen && lend <= rend
+					| (If(lstate, lthen, lelse, lend), If(rstate, rthen, relse, rend)) =>
+						lstate == rstate && lthen <= rthen && lelse <= relse && lend <= rend
+					| (While(lstate, lbody, lend), While(rstate, rbody, rend)) =>
+						lstate == rstate && lbody <= rbody && lend <= rend
+					| _ => false
+				}
+			}
+		}
+		
+		public static @==(left : NGraph, right : NGraph) : bool {
+			if(left : object == null && left : object == right : object)
+				true
+			else {
+				Comped = [];
+				left <= right
+			}
+		}
+		
+		public static mutable Walked : list [NGraph];
+		public static mutable Comped : list [NGraph];
+		
+		public static Build(state : int, connections : Hashtable [int, list [int]]) : NGraph {
+			def nodes = Hashtable.[int, NGraph]();
+			
+			def BuildCond(state) {
+				unless(nodes.ContainsKey(state)) {
+					unless(connections.ContainsKey(state))
+						throw Exception("Holy jesus, what are these goddamn animals?");
+					
+					def conn = connections[state];
+					nodes[state] = match(conn) {
+						| [] => End(state)
+						| [next] => UnCond(state, End(next));
+						| [taken, not] => Cond(state, End(taken), End(not))
+						| _ => throw Exception("Fuck you Apple.")
+					};
+					
+					foreach(next in conn)
+						BuildCond(next)
+				}
+			}
+			
+			def Update(node) {
+				| node is UnCond =>
+					node.UnCondNext = nodes[node.UnCondNext.GetState()];
+				| node is Cond =>
+					node.CondTaken = nodes[node.CondTaken.GetState()];
+					node.CondNot = nodes[node.CondNot.GetState()];
+				| _ => ()
+			}
+			
+			BuildCond(state);
+			
+			foreach((_, node) in nodes.KeyValuePairs)
+				Update(node);
+			
+			nodes[state]
+		}
+		
+		/*
+		GetPath(depth : int = 0, accum : list [int * NGraph] = null) : list [int * NGraph] {
+			def accum = {
+				if(depth == 0) {
+					Walked = [];
+					[]
+				} else
+					accum
+			};
+			
+			if(Walked.Contains(this))
+				accum
+			else {
+				def accum = (depth, this) :: accum;
+				
+				Walked = this :: Walked;
+				
+				match(this) {
+					| UnCond(_, a) => a.GetPath(depth+1, accum)
+					| Cond(_, a, b)
+					| When(_, a, b)
+					| While(_, a, b) =>
+						b.GetPath(
+							depth+1,
+							a.GetPath(
+								depth+1,
+								accum
+							)
+						)
+					| If(_, a, b, c) =>
+						c.GetPath(
+							depth+1,
+							b.GetPath(
+								depth+1,
+								a.GetPath(
+									depth+1,
+									accum
+								)
+							)
+						)
+					| _ => accum
+				}
+			}
+		}
+		*/
+		
+		public Reduce() : NGraph {
+			/*
+			def FindNeighbor(left : NGraph, right : NGraph, func : NGraph -> bool = null) {
+				def leftPath = left.GetPath();
+				def rightPath = right.GetPath();
+				
+				mutable shared : list [int * int * NGraph] = null;
+				
+				foreach((leftDepth, node) in leftPath) {
+					foreach((rightDepth, rightNode) in rightPath) {
+						when(
+							node : object == rightNode : object &&
+							(func == null || func(node))
+						)
+							shared = (leftDepth, rightDepth, node) :: shared
+					}
+				}
+				
+				if(shared.Length == 0)
+					null
+				else {
+					mutable closest : float * NGraph = (-1.0f, null);
+					foreach((leftDepth, rightDepth, node) in shared) {
+						def average = ((leftDepth :> float) + (rightDepth :> float)) / 2;
+						when(closest[0] == -1.0f || average < closest[0])
+							closest = (average, node)
+					}
+					
+					closest[1]
+				}
+			}
+			*/
+			
+			def SingleNext(node : NGraph) {
+				| UnCond(_, next) =>
+					next
+				
+				| When(_, _, next)
+				| If(_, _, _, next)
+				| While(_, _, next) =>
+					match(next) {
+						| end is UnCond => SingleNext(end)
+						| next => next
+					}
+				| _ => null
+			}
+			
+			def ReduceWhen(node : NGraph) {
+				| Cond(state, taken, not) =>
+					def next = SingleNext(taken);
+					if(next == not)
+						When(state, taken, not)
+					else
+						null
+				
+				| _ => null
+			}
+			
+			def ReduceIf(node : NGraph) {
+				| Cond(state, taken, not) =>
+					def takenNext = SingleNext(taken);
+					def notNext = SingleNext(not);
+					if(takenNext == notNext)
+						If(state, taken, not, takenNext)
+					else
+						null
+				
+				| _ => null
+			}
+			
+			def ReduceWhile(node : NGraph) {
+				| Cond(state, taken, not) =>
+					def next = SingleNext(taken);
+					if(next == node)
+						While(state, taken, not)
+					else
+						null
+				
+				| _ => null
+			}
+			
+			def graph = this;
+			def (foundWhen, graph) = graph.Transform(ReduceWhen);
+			def (foundWhile, graph) = graph.Transform(ReduceWhile);
+			def (foundIf, graph) = graph.Transform(ReduceIf);
+			if(foundWhen || foundIf || foundWhile)
+				graph.Reduce()
+			else
+				this
+		}
+		
+		public GetState() : int {
+			match(this) {
+				| UnCond(state, _)
+				| Cond(state, _, _)
+				| End(state)
+				| When(state, _, _)
+				| If(state, _, _, _)
+				| While(state, _, _)
+				| Body(state) =>
+					state
+			}
+		}
+		
+		public Walk(func : NGraph -> object, start : bool = true) : object {
+			when(start)
+				Walked = [];
+			
+			if(Walked.Contains(this))
+				null
+			else {
+				Walked = this :: Walked;
+				
+				def ret = func(this);
+				
+				if(ret == null)
+					match(this) {
+						| UnCond(_, next) =>
+							next.Walk(func, false)
+						
+						| Cond(_, taken, not) =>
+							def ret = taken.Walk(func, false);
+							if(ret == null)
+								not.Walk(func, false)
+							else
+								ret
+						
+						| End(_) => null
+						
+						| When(_, then, end) =>
+							def ret = then.Walk(func, false);
+							if(ret == null)
+								end.Walk(func, false)
+							else
+								ret
+						
+						| If(_, then, else_, end) =>
+							def ret = then.Walk(func, false);
+							if(ret == null) {
+								def ret = else_.Walk(func, false);
+								if(ret == null)
+									end.Walk(func, false)
+								else
+									ret
+							} else
+								ret
+						
+						| While(_, body, end) =>
+							def ret = body.Walk(func, false);
+							if(ret == null)
+								end.Walk(func, false)
+							else
+								ret
+						
+						| Body(_) => null
+					}
+				else
+					ret
+			}
+		}
+		
+		public WalkAll(func : NGraph -> object, accum : list [object] = null) : list [object] {
+			def accum = {
+				if(accum == null) {
+					Walked = [];
+					[]
+				} else
+					accum
+			};
+			
+			if(Walked.Contains(this))
+				accum
+			else {
+				Walked = this :: Walked;
+				
+				def ret = func(this);
+				def accum = {
+					if(ret == null)
+						accum
+					else
+						ret :: accum
+				};
+				
+				match(this) {
+					| UnCond(_, next) =>
+						next.WalkAll(func, accum)
+					
+					| Cond(_, taken, not) =>
+						not.WalkAll(
+							func,
+							taken.WalkAll(
+								func,
+								accum
+							)
+						)
+					
+					| End(_) => accum
+					
+					| When(_, then, end) =>
+						end.WalkAll(
+							func,
+							then.WalkAll(
+								func,
+								accum
+							)
+						)
+					
+					| If(_, then, else_, end) =>
+						end.WalkAll(
+							func,
+							else_.WalkAll(
+								func,
+								then.WalkAll(
+									func,
+									accum
+								)
+							)
+						)
+					
+					| While(_, body, end) =>
+						end.WalkAll(
+							func,
+							body.WalkAll(
+								func,
+								accum
+							)
+						)
+					
+					| Body(_) => accum
+				}
+			}
+		}
+		
+		public Transform(func : NGraph -> NGraph) : bool * NGraph {
+			def states = Hashtable.[int, NGraph]();
+			mutable change : bool = false;
+			
+			def Update(node : NGraph) {
+				| node is UnCond =>
+					node.UnCondNext = states[node.UnCondNext.GetState()]
+				
+				| node is Cond =>
+					node.CondTaken = states[node.CondTaken.GetState()];
+					node.CondNot = states[node.CondNot.GetState()]
+				
+				| node is When =>
+					node.WhenThen = states[node.WhenThen.GetState()];
+					node.WhenEnd = states[node.WhenEnd.GetState()]
+				
+				| node is If =>
+					node.IfThen = states[node.IfThen.GetState()];
+					node.IfElse = states[node.IfElse.GetState()];
+					node.IfEnd = states[node.IfEnd.GetState()];
+				
+				| node is While =>
+					node.WhileBody = states[node.WhileBody.GetState()];
+					node.WhileEnd = states[node.WhileEnd.GetState()]
+				
+				| _ => ()
+			}
+			
+			_ = this.Walk(
+				fun(node : NGraph) {
+					states[node.GetState()] = {
+						def ret = func(node);
+						if(ret == null)
+							node
+						else {
+							change = true;
+							ret
+						}
+					};
+					
+					null
+				}
+			);
+			
+			foreach((_, node) in states.KeyValuePairs)
+				Update(node);
+			
+			(change, states[GetState()])
+		}
+		
+		public OutputDot(fn : string) : void {
+			def sw = StreamWriter(fn);
+			sw.WriteLine("digraph NGraph {");
+			
+			_ = this.Walk(
+				fun(node : NGraph) {
+					sw.WriteLine(
+						String.Format(
+							"\tstate_{0:X} [label=\"{1}{0:X}\" color=\"{2}\"];",
+							node.GetState(),
+							match(node) {
+								| _ is When => "when "
+								| _ is If => "if "
+								| _ is While => "while "
+								| _ => ""
+							},
+							match(node) {
+								| _ is UnCond => "gray"
+								| _ is Cond => "cyan"
+								
+								| _ is When => "blue"
+								| _ is If => "red"
+								| _ is While => "green"
+								| _ is Body => "purple"
+								
+								| _ => "black"
+							}
+						)
+					);
+					null
+				}
+			);
+			
+			_ = this.Walk(
+				fun(node : NGraph) {
+					def state = String.Format("state_{0:X}", node.GetState());
+					def Connect(node) {
+						sw.WriteLine(
+							String.Format(
+								"\t{0} -> state_{1:X};",
+								state,
+								node.GetState()
+							)
+						)
+					}
+					match(node) {
+						| UnCond(_, next) =>
+							Connect(next)
+						| While(_, taken, not) // Misnomer
+						| Cond(_, taken, not)
+						| When(_, taken, not) // Misnomer
+						| If(_, taken, not, _) =>
+							Connect(not);
+							Connect(taken)
+						| _ => ()
+					}
+					null
+				}
+			);
+			
+			sw.WriteLine("}");
+			sw.Close();
+		}
+	}
+}
